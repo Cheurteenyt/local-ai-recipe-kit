@@ -1,8 +1,8 @@
 # local-ai-recipe-kit
 
 Get a big model running on **your** GPU, measure it the same way we do, and send the result back as one file.
-Good submissions become recipes in [local-ai-registry](https://github.com/0xSero/local-ai-registry) (and show up in the
-[Omarchy Local AI plugin](https://github.com/0xSero/omarchy-local-ai) for machines that can run them). This repo is the
+Good submissions become recipes in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry) (and show up in the
+[Omarchy Local AI plugin](https://github.com/sybil-solutions/omarchy-local-ai) for machines that can run them). This repo is the
 intake: raw, measured submissions live here so the registry stays small and reviewed.
 
 **First target:** Qwen3.8-Flash-Next (180B MoE, 6B active, AA Intelligence Index 40) on one 24-32 GB consumer GPU —
