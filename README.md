@@ -9,6 +9,13 @@ intake: raw, measured submissions live here so the registry stays small and revi
 experts in system RAM, n-gram table on NVMe. See [`targets/qwen3.8-flash-next-offload.md`](targets/qwen3.8-flash-next-offload.md)
 for what it needs (VRAM, free RAM, NVMe space) and the known-good configs (RTX 3090, Arc Pro B70).
 
+## Bounties: $50 per recipe
+
+Cards and models with no tested recipe carry a bounty: [open bounties](https://github.com/sybil-solutions/local-ai-registry/issues?q=is%3Aissue+is%3Aopen+label%3Abounty).
+Claim one with `/attempt` on the issue, run the steps below on that card, then turn the result into a recipe with
+`lab.py try --on endpoint` in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry) and open one PR there.
+Rules and payment: [BOUNTIES.md](https://github.com/sybil-solutions/.github/blob/main/BOUNTIES.md).
+
 ## How to contribute a result
 1. Check the target's **Needs** table against your machine: `python3 tools/probe.py --models-dir ~/models`.
 2. Open your coding agent on that machine in a clone of this repo and give it [`PROMPT.md`](PROMPT.md).
