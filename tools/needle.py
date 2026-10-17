@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--tokens", type=int, default=131072)
     ap.add_argument("--depth", type=float, default=0.6)
     ap.add_argument("--out")
+    ap.add_argument("--timeout", type=float, default=3600, help="seconds to wait for the answer (slow long-context prefill)")
     a = ap.parse_args()
     rng = random.Random(7)
     # ~1.3 tokens per word for these words; sentences of 12 words
@@ -35,7 +36,7 @@ def main():
     req = urllib.request.Request(a.url + "/v1/chat/completions", data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=3600) as r:
+    with urllib.request.urlopen(req, timeout=a.timeout) as r:
         out = json.loads(r.read())
     dt = time.time() - t0
     ans = out["choices"][0]["message"]["content"]
