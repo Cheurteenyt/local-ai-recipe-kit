@@ -109,13 +109,17 @@ NONCE = __import__("secrets").token_hex(16)
 PROMPT_HASHES = []
 
 
+RAW_TEMPLATE = None
+
+
 def chat_ids(url, i):
     user = f"[cache-bust nonce: {NONCE}-{i}]\nWrite a detailed, well-structured explanation of {TOPICS[i % len(TOPICS)]} (variant {i})."
     if API == "llamacpp":
         t = apply_template(url, user)
         PROMPT_HASHES.append(__import__("hashlib").sha256(t.encode()).hexdigest())
         return tokenize(url, t)
-    t = (f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    t = (RAW_TEMPLATE.replace("{prompt}", user) if RAW_TEMPLATE else
+         f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
     PROMPT_HASHES.append(__import__("hashlib").sha256(t.encode()).hexdigest())
     return tokenize(url, t)
 
@@ -159,12 +163,16 @@ def main():
     ap.add_argument("--dec-reps", type=int, default=2)
     ap.add_argument("--tol", type=float, default=0.05)
     ap.add_argument("--no-early-exit", action="store_true")
+    ap.add_argument("--raw-template", help="SGLang API: render chat prompts with this template ('{prompt}' marks the "
+                    "user message) instead of the built-in ChatML no-think form, for models with another chat format, "
+                    "e.g. GLM-5.3: '[gMASK]<sop><|system|>Reasoning Effort: Max<|user|>{prompt}<|assistant|><think></think>'")
     ap.add_argument("--update-best", action="store_true")
     ap.add_argument("--best", help="best-known JSON for early exit (default reference/best_known.json)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--api", choices=["sglang", "llamacpp"], default="sglang", help="server API (see module doc)")
     a = ap.parse_args()
-    global API, VOCAB
+    global API, VOCAB, RAW_TEMPLATE
+    RAW_TEMPLATE = a.raw_template
     API = a.api
     if API == "llamacpp":  # random prompt ids must stay inside this model's vocabulary
         try:
@@ -250,7 +258,7 @@ def main():
         r = [run_conc(1, 90 + i, prefix=pre) for i in range(a.dec_reps)]
         res["decode"]["C1@32k"] = {"aggregate": med([x["aggregate"] for x in r]), "rounds": r}
         print(f"decode C1@32k: {statistics.median([x['aggregate'] for x in r]):.2f} tok/s", flush=True)
-    res["prompt_sha256"] = PROMPT_HASHES; res["nonce_prefix"] = NONCE
+    res["prompt_sha256"] = PROMPT_HASHES; res["nonce_prefix"] = NONCE; res["raw_template"] = RAW_TEMPLATE
     res["status"] = "DONE"; res["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z"); save()
     if a.update_best:
         for k, g in res.get("gates", {}).items():
