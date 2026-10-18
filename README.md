@@ -26,8 +26,9 @@ Rules and payment: [BOUNTIES.md](https://github.com/sybil-solutions/.github/blob
    fixed speed protocol ([`PROTOCOL.md`](PROTOCOL.md)), tunes one knob at a time, and writes the submission file into
    your clone of local-ai-registry: `data/sources/recipe-kit/<card id>/<date>-<handle>.json`.
 3. `python3 tools/validate.py <registry clone>/data/sources/recipe-kit/<card id>/<file>.json`, then open a PR to
-   local-ai-registry with that file (and the recipe, if `lab.py try` passed). Failures are welcome too ("does not fit in
-   64 GB RAM", "crashes on driver X"): submit the file alone and say so in `notes`.
+   local-ai-registry with that file (and the recipe, if `lab.py try` passed). A measured run that produced no recipe
+   goes in as the file alone. A run that never reached the panel and sweep ("does not fit in 64 GB RAM", "crashes on
+   driver X") is reported on the bounty issue, or a new registry issue, with the `probe.py` output and what failed.
 
 ## What is in here
 | path | what |

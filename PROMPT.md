@@ -54,8 +54,9 @@ You are helping me run an open-weights model on my own hardware and submit a mea
    table: knob, value, panel, sweep medians, verdict. Keep the best config that passes quality.
 8. **Different hardware class** (smaller VRAM, less RAM, no NVMe, AMD, Apple): say so, propose the smallest change
    that could work (e.g. pinned n-gram table instead of NVMe when there is RAM, fewer cache slots), and treat it as a
-   new config through steps 4-7. If nothing passes quality, submit the failure — a documented "does not work on X
-   because Y" is a valid, useful submission.
+   new config through steps 4-7. A documented "does not work on X because Y" is useful: if a config has a panel and a
+   sweep, submit it through step 9 even without a recipe; if nothing got that far, report the probe output, the panel
+   result if any and what failed on the bounty issue (or a new local-ai-registry issue).
 9. **Submit**: `python3 tools/make_submission.py --probe work/probe.json --sweep work/sweep.json --panel
    work/panel.json [--needle work/needle.json] --memwatch work/memwatch.csv --launch work/launch.json --target
    <target id> --handle <handle> --out <registry clone>/data/sources/recipe-kit/<card id>/<YYYY-MM-DD>-<handle>.json`
