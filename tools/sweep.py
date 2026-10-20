@@ -117,6 +117,10 @@ def main():
                            ("max_running_requests", "max_total_num_tokens", "chunked_prefill_size", "kv_cache_dtype",
                             "context_length", "mem_fraction_static", "max_mamba_cache_size")},
            "prefill": {}, "decode": {}, "status": "RUNNING"}
+    # the evidence of PROTOCOL.md §6: the cache-bust nonce and the SHA-256 of the decode prompts sent
+    # so far. PROMPT_HASHES grows while the sweep runs, so every save() carries the hashes it knows -
+    # an early exit keeps the evidence of the prompts it already asked.
+    res["prompt_sha256"] = PROMPT_HASHES; res["nonce_prefix"] = NONCE
 
     def save():
         json.dump(res, open(a.out, "w"), indent=1)
@@ -178,7 +182,6 @@ def main():
         r = [run_conc(1, 90 + i, prefix=pre) for i in range(a.dec_reps)]
         res["decode"]["C1@32k"] = {"aggregate": med([x["aggregate"] for x in r]), "rounds": r}
         print(f"decode C1@32k: {statistics.median([x['aggregate'] for x in r]):.2f} tok/s", flush=True)
-    res["prompt_sha256"] = PROMPT_HASHES; res["nonce_prefix"] = NONCE
     res["status"] = "DONE"; res["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z"); save()
     if a.update_best:
         for k, g in res.get("gates", {}).items():

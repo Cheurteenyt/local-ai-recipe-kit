@@ -34,7 +34,7 @@ def main():
                                     "rounds": [{x: r.get(x) for x in ("aggregate", "tokens", "ttft_max", "finish")}
                                                for r in (v.get("rounds") or [])]}
                                 for k, v in (sweep.get("decode") or {}).items()},
-                     "prompt_sha256": sweep.get("prompt_sha256"),
+                     "prompt_sha256": sweep.get("prompt_sha256"), "nonce_prefix": sweep.get("nonce_prefix"),
                      "server_args": sweep.get("server_args"), "gates": sweep.get("gates")},
            "needs_measured": memwatch_summary(a.memwatch) if a.memwatch else None, "notes": a.notes}
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
