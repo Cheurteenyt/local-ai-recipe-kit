@@ -14,6 +14,7 @@
 import argparse, json, os, random, statistics, sys, threading, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+BEST_DEFAULT = os.path.join(HERE, "..", "reference", "best_known.json")
 TOPICS = ["the history of the printing press", "how a jet engine works", "the causes of the French revolution",
           "photosynthesis in C4 plants", "how TCP congestion control works", "the life cycle of stars",
           "how vaccines train the immune system", "the economics of container shipping", "how compilers optimise loops",
@@ -90,10 +91,22 @@ def med(xs):
     return {"median": statistics.median(xs), "min": min(xs), "max": max(xs), "n": len(xs), "all": xs}
 
 
+def best_keys(path):
+    """The card keys of a best_known.json (the '_note' entry is not a card)."""
+    try:
+        d = json.load(open(path))
+    except Exception:
+        return []
+    return [k for k in d if not k.startswith("_")]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:30100")
-    ap.add_argument("--card", required=True, help="key in best_known.json, e.g. rtx3090 / b70")
+    ap.add_argument("--card", required=True,
+                    help="key in reference/best_known.json" +
+                         (": " + ", ".join(best_keys(BEST_DEFAULT)) if best_keys(BEST_DEFAULT) else "") +
+                         " (an unknown key means no baseline: no early exit)")
     ap.add_argument("--config", required=True, help="label: commit + env summary")
     ap.add_argument("--prefill", type=int, nargs="*", default=[8192, 16384, 32768, 65536])
     ap.add_argument("--conc", type=int, nargs="*", default=[1, 2, 3, 4])
@@ -106,13 +119,20 @@ def main():
     ap.add_argument("--best", help="best-known JSON for early exit (default reference/best_known.json)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    bk_path = a.best or os.path.join(HERE, "..", "reference", "best_known.json")
+    bk_path = a.best or BEST_DEFAULT
     best_all = json.load(open(bk_path)) if os.path.exists(bk_path) else {}
+    known = a.card in best_all and not a.card.startswith("_")
     best = best_all.get(a.card, {})
+    if not known:
+        print("WARNING: card " + repr(a.card) + " is not a key of " + os.path.relpath(bk_path, os.path.join(HERE, "..")) +
+              " (known keys: " + (", ".join(best_keys(bk_path)) or "none") + ")", file=sys.stderr)
+        print("WARNING: no baseline for this card: the early exit cannot run and no gate is marked as passed "
+              "(use --best <file> or record a baseline with --update-best)", file=sys.stderr)
     info = json.loads(urllib.request.urlopen(a.url + "/server_info", timeout=30).read())
     ctx_len = int(info.get("context_length") or (info.get("server_args") or {}).get("context_length") or 131072)
     res = {"card": a.card, "config": a.config, "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "ctx_len": ctx_len,
            "protocol": "bench/sweep.py v1", "tol": a.tol, "best_known_before": best,
+           "baseline": a.card if known else "MISSING",
            "server_args": {k: (info.get("server_args") or info).get(k) for k in
                            ("max_running_requests", "max_total_num_tokens", "chunked_prefill_size", "kv_cache_dtype",
                             "context_length", "mem_fraction_static", "max_mamba_cache_size")},
@@ -123,9 +143,9 @@ def main():
 
     def gate(key, val):
         b = best.get(key)
-        ok = b is None or val >= (1 - a.tol) * b
+        ok = None if b is None else val >= (1 - a.tol) * b
         res.setdefault("gates", {})[key] = {"value": round(val, 2), "best_known": b, "pass": ok}
-        if not ok and not a.no_early_exit:
+        if ok is False and not a.no_early_exit:
             res["status"] = f"EARLY_EXIT at {key}: {val:.1f} < {(1 - a.tol):.2f} x best {b}"
             save(); print(res["status"], flush=True); sys.exit(3)
 
