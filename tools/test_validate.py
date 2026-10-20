@@ -6,6 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 VALIDATE = os.path.join(HERE, "validate.py")
 TARGET = "qwen3.8-flash-next-offload"
+CARD = "rtx-3090-24gb"
 
 
 def submission(**kw):
@@ -15,9 +16,12 @@ def submission(**kw):
                     "args": ["--model-path", "/models/qwen3.8-flash-next-exl3"], "env": {}},
          "probe": {"host": {"cpu": "EPYC 7443P"}, "gpus": []},
          "quality": {"panel": {"top1_agreement": 0.9913, "mean_kl_top20": 0.00092, "positions": 3001}},
-         "speed": {"status": "DONE", "prefill": {"8192": {"median": 2627}, "16384": {"median": 2785},
-                                                "32768": {"median": 2846}},
+         "speed": {"status": "DONE", "card": CARD, "baseline": CARD,
+                   "prefill": {"8192": {"median": 2627}, "16384": {"median": 2785},
+                               "32768": {"median": 2846}},
                    "decode": {"C1": {"aggregate": {"median": 62.7}}}},
+         "needs_measured": {"samples": 120, "mem_available_start_gb": 82.95, "mem_available_min_gb": 28.49,
+                            "host_ram_drop_peak_gb": 54.46, "swap_used_max_gb": 0.0, "gpu_used_peak_mib": 63932.0},
          "notes": ""}
     s.update(kw)
     return s
@@ -25,7 +29,8 @@ def submission(**kw):
 
 def validate(sub):
     with tempfile.TemporaryDirectory() as tmp:
-        p = os.path.join(tmp, "sub.json")
+        os.makedirs(os.path.join(tmp, CARD))
+        p = os.path.join(tmp, CARD, "sub.json")
         json.dump(sub, open(p, "w"), indent=1)
         r = subprocess.run([sys.executable, VALIDATE, p], capture_output=True, text=True)
         return r.returncode, r.stdout + r.stderr
