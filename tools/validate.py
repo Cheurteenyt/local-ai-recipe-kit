@@ -6,9 +6,9 @@ import glob, json, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 TARGETS = {os.path.splitext(f)[0] for f in os.listdir(os.path.join(HERE, "..", "targets"))}
 DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
-# The quality band is enforced for submissions made on/after this date. Submissions from
-# before it are grandfathered: validate.py warns about them instead of failing them.
-BAND_RULE_FROM = "2026-10-20"
+# The effective date of the submission rules below: a submission with an older "submitted"
+# date is grandfathered - validate.py warns about it instead of failing it.
+RULE_FROM = "2026-10-20"
 
 
 def band_of(target):
@@ -42,10 +42,10 @@ def band_errors(panel, band):
     return out
 
 
-def before_rule(sub, date):
+def before_rule(sub):
     """True for submissions that predate the rule: they are warned about, not failed."""
     d = str(sub.get("submitted") or "")
-    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)) and d < date
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)) and d < RULE_FROM
 
 
 def check(path):
@@ -80,9 +80,9 @@ def check(path):
     if band:
         out = band_errors(p, band)
         if out:
-            if before_rule(s, BAND_RULE_FROM):
+            if before_rule(s):
                 warns.append("band not enforced for a submission from before the rule (submitted "
-                             f"{s.get('submitted')} < {BAND_RULE_FROM}): " + "; ".join(out))
+                             f"{s.get('submitted')} < {RULE_FROM}): " + "; ".join(out))
             else:
                 errs.append(f"quality.panel outside the target's band (targets/{s['target']}.md): " + "; ".join(out))
     sp = s.get("speed") or {}
