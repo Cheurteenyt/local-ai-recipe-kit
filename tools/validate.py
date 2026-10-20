@@ -37,10 +37,15 @@ def check(path):
         errs.append("quality.panel needs top1_agreement and mean_kl_top20 (run tools/score_ref_panel.py)")
     sp = s.get("speed") or {}
     if sp.get("status") not in ("DONE",) and not str(sp.get("status", "")).startswith("EARLY_EXIT"):
-        errs.append("speed.status must be DONE or EARLY_EXIT… (run tools/sweep.py)")
+        errs.append("speed.status must be DONE or EARLY_EXIT… (run tools/sweep.py)"
+                    + (f"; the sweep failed: {sp['error']}" if sp.get("error") else ""))
     for n in ("8192", "16384", "32768"):
-        if n not in (sp.get("prefill") or {}):
+        v = (sp.get("prefill") or {}).get(n)
+        if v is None:
             errs.append(f"speed.prefill missing {n}")
+        elif not isinstance(v, dict) or not isinstance(v.get("median"), (int, float)) or not v.get("n"):
+            why = f" (skipped: {v['skipped']})" if isinstance(v, dict) and v.get("skipped") else ""
+            errs.append(f"speed.prefill[{n}] has no measurement{why} (a submission needs a measured median)")
     if "C1" not in (sp.get("decode") or {}) and sp.get("status") == "DONE":
         errs.append("speed.decode missing C1")
     card = os.path.basename(os.path.dirname(path))
