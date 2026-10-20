@@ -5,6 +5,10 @@ import glob, json, os, re, sys
 
 TARGETS = {os.path.splitext(f)[0] for f in os.listdir(os.path.join(os.path.dirname(__file__), "..", "targets"))}
 DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+# the same shapes to_localmaxxing.py refuses to write, so a submission that passes here is one that tool would
+# also take: a token of any of the three kinds, a bare address, or a personal path
+SECRETISH = re.compile(r"hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}"
+                        r"|(?:\d{1,3}\.){3}\d{1,3}|/(?:Users|home)/[^/\s\"]+")
 
 
 def check(path):
@@ -30,8 +34,10 @@ def check(path):
     txt = json.dumps(s)
     if re.search(r"/(Users|home)/[A-Za-z0-9_.-]+/", txt):
         errs.append("personal absolute path found; use placeholders like <models dir>")
-    if re.search(r"hf_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9]{20,}", txt):
-        errs.append("looks like a secret/token")
+    # a token of any of the three kinds, a bare address or a personal path: the shapes the scrubber refuses
+    bad = [m for m in SECRETISH.findall(txt) if m not in ("0.0.0.0", "127.0.0.1")]
+    if bad:
+        errs.append("looks like a secret/token, an address or a personal path: " + ", ".join(sorted(set(bad))[:5]))
     p = (s.get("quality") or {}).get("panel") or {}
     if not isinstance(p.get("top1_agreement"), (int, float)) or not isinstance(p.get("mean_kl_top20"), (int, float)):
         errs.append("quality.panel needs top1_agreement and mean_kl_top20 (run tools/score_ref_panel.py)")
