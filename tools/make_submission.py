@@ -10,6 +10,9 @@ def memwatch_summary(path):
     avail = [float(r["mem_available_gb"]) for r in rows if r["mem_available_gb"]]
     swap = [float(r["swap_used_gb"]) for r in rows if r["swap_used_gb"]]
     gpu = [float(r["gpu_used_mib"]) for r in rows if r.get("gpu_used_mib")]
+    if not avail:
+        # the writer could not compute the numbers: say so instead of dying on the first sample
+        return {"samples": len(rows), "error": "the memwatch file holds no memory numbers; the tool that wrote it could not compute them"}
     return {"samples": len(rows), "mem_available_start_gb": avail[0], "mem_available_min_gb": min(avail),
             "host_ram_drop_peak_gb": round(avail[0] - min(avail), 2), "swap_used_max_gb": max(swap) if swap else None,
             "gpu_used_peak_mib": max(gpu) if gpu else None}

@@ -7,7 +7,9 @@ OUT=${1:-memwatch.csv}
 echo "t,mem_available_gb,swap_used_gb,gpu_used_mib" > "$OUT"
 while true; do
   read -r ma st sf < <(awk '/MemAvailable/{a=$2}/SwapTotal/{t=$2}/SwapFree/{f=$2}END{print a,t,f}' /proc/meminfo)
-  g=$(timeout 5 nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | paste -sd+ | bc 2>/dev/null)
-  echo "$(date +%s),$(echo "scale=2;$ma/1000000" | bc),$(echo "scale=2;($st-$sf)/1000000" | bc),$g" >> "$OUT"
+  # awk does the arithmetic: bc is not installed everywhere, and without it every column came out empty
+  g=$(timeout 5 nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | awk '{s+=$1} END{if(NR) print s}')
+  awk -v t="$(date +%s)" -v ma="$ma" -v sw="$((st-sf))" -v g="$g" \
+    'BEGIN{printf "%s,%.2f,%.2f,%s\n", t, int(ma/10000)/100, int(sw/10000)/100, g}' >> "$OUT"
   sleep 1
 done
