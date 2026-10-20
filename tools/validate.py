@@ -11,6 +11,12 @@ DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 RULE_FROM = "2026-10-20"
 
 
+def before_rule(sub):
+    """True for submissions that predate the rule: they are warned about, not failed."""
+    d = str(sub.get("submitted") or "")
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)) and d < RULE_FROM
+
+
 def band_of(target):
     """The machine-readable quality band of targets/<target>.md (a fenced json block), or None."""
     path = os.path.join(HERE, "..", "targets", target + ".md")
@@ -40,12 +46,6 @@ def band_errors(panel, band):
     if hi is not None and isinstance(kl, (int, float)) and kl > hi:
         out.append(f"mean_kl_top20 {num(kl)} above the band maximum {num(hi)}")
     return out
-
-
-def before_rule(sub):
-    """True for submissions that predate the rule: they are warned about, not failed."""
-    d = str(sub.get("submitted") or "")
-    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)) and d < RULE_FROM
 
 
 def check(path):
