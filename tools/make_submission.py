@@ -28,7 +28,8 @@ def main():
            "handle": a.handle, "target": a.target, "launch": L(a.launch), "probe": L(a.probe),
            "quality": {"panel": {k: panel.get(k) for k in ("top1_agreement", "mean_kl_top20", "positions")},
                        "needle": L(a.needle)},
-           "speed": {"status": sweep.get("status"), "config": sweep.get("config"), "prefill": sweep.get("prefill"),
+           "speed": {"status": sweep.get("status"), "error": sweep.get("error"), "config": sweep.get("config"),
+                      "prefill": sweep.get("prefill"),
                      "decode": {k: {"aggregate": v.get("aggregate"), "per_stream_mean": v.get("per_stream_mean"),
                                     "gpu_power_w_mean": v.get("gpu_power_w_mean"),
                                     "rounds": [{x: r.get(x) for x in ("aggregate", "tokens", "ttft_max", "finish")}

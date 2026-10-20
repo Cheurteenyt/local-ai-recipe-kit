@@ -14,6 +14,7 @@
 import argparse, json, os, random, statistics, sys, threading, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = None  # the result file of the run in progress: a crash handler still marks it FAILED
 TOPICS = ["the history of the printing press", "how a jet engine works", "the causes of the French revolution",
           "photosynthesis in C4 plants", "how TCP congestion control works", "the life cycle of stars",
           "how vaccines train the immune system", "the economics of container shipping", "how compilers optimise loops",
@@ -90,7 +91,26 @@ def med(xs):
     return {"median": statistics.median(xs), "min": min(xs), "max": max(xs), "n": len(xs), "all": xs}
 
 
+class SweepFailed(Exception):
+    """The run cannot continue: the result file is marked FAILED with this reason."""
+
+
+def mark_failed(why):
+    """Mark the result file of a run that died: FAILED, with the reason and the data measured so far."""
+    if not OUT:
+        return
+    try:
+        d = json.load(open(OUT))
+    except Exception:
+        return
+    d["status"] = "FAILED"
+    d["error"] = why
+    d["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    json.dump(d, open(OUT, "w"), indent=1)
+
+
 def main():
+    global OUT
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:30100")
     ap.add_argument("--card", required=True, help="key in best_known.json, e.g. rtx3090 / b70")
@@ -106,6 +126,7 @@ def main():
     ap.add_argument("--best", help="best-known JSON for early exit (default reference/best_known.json)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    OUT = a.out
     bk_path = a.best or os.path.join(HERE, "..", "reference", "best_known.json")
     best_all = json.load(open(bk_path)) if os.path.exists(bk_path) else {}
     best = best_all.get(a.card, {})
@@ -121,6 +142,12 @@ def main():
     def save():
         json.dump(res, open(a.out, "w"), indent=1)
 
+    def fail(why):
+        """Stop the run: keep what was measured, say what failed (the handler writes the status)."""
+        res["error"] = why
+        save()
+        raise SweepFailed(why)
+
     def gate(key, val):
         b = best.get(key)
         ok = b is None or val >= (1 - a.tol) * b
@@ -130,15 +157,22 @@ def main():
             save(); print(res["status"], flush=True); sys.exit(3)
 
     seed = int(time.time())
-    post(a.url, {"input_ids": rand_ids(512, seed), "sampling_params": {"temperature": 0}, "stream": True}, True)
+    save()                                   # the result file exists from now on, even if the run dies
+    try:
+        post(a.url, {"input_ids": rand_ids(512, seed), "sampling_params": {"temperature": 0}, "stream": True}, True)
+    except Exception as e:
+        fail(f"warm-up: {type(e).__name__}: {e}")
     for n in a.prefill:
         if n + 64 > ctx_len:
             res["prefill"][str(n)] = {"skipped": f"> context {ctx_len}"}; continue
         rates = []
         for rep in range(a.reps):
-            t0, times, _ = post(a.url, {"input_ids": rand_ids(n, seed + 1000 * n + rep),
-                                        "sampling_params": {"temperature": 0}, "stream": True}, True)
-            rates.append(round(n / (times[0] - t0), 1))
+            try:
+                t0, times, _ = post(a.url, {"input_ids": rand_ids(n, seed + 1000 * n + rep),
+                                            "sampling_params": {"temperature": 0}, "stream": True}, True)
+                rates.append(round(n / (times[0] - t0), 1))
+            except Exception as e:
+                fail(f"prefill {n} rep {rep}: {type(e).__name__}: {e}")
             print(f"prefill {n}: {rates[-1]} tok/s", flush=True)
         res["prefill"][str(n)] = med(rates); save()
         gate(f"prefill_{n}", statistics.median(rates))
@@ -146,25 +180,44 @@ def main():
     def run_conc(c, rnd, prefix=None):
         out = [None] * c
         def one(i):
-            ids = (prefix or []) + chat_ids(a.url, rnd * 100 + i)
-            p = {"input_ids": ids, "stream": True,
-                 "sampling_params": {"temperature": 0, "max_new_tokens": max(64, (ctx_len - len(ids)) // max(c, 1) - 64)}}
-            t0, times, last = post(a.url, p)
-            n = (last or {}).get("meta_info", {}).get("completion_tokens", len(times))
-            out[i] = {"t0": t0, "first": times[0], "last": times[-1], "tokens": n,
-                      "finish": ((last or {}).get("meta_info", {}).get("finish_reason") or {}).get("type")}
+            try:
+                ids = (prefix or []) + chat_ids(a.url, rnd * 100 + i)
+                p = {"input_ids": ids, "stream": True,
+                     "sampling_params": {"temperature": 0, "max_new_tokens": max(64, (ctx_len - len(ids)) // max(c, 1) - 64)}}
+                t0, times, last = post(a.url, p)
+                n = (last or {}).get("meta_info", {}).get("completion_tokens", len(times))
+                out[i] = {"t0": t0, "first": times[0], "last": times[-1], "tokens": n,
+                          "finish": ((last or {}).get("meta_info", {}).get("finish_reason") or {}).get("type")}
+            except Exception as e:            # one broken request must not take the whole run down
+                out[i] = {"error": f"{type(e).__name__}: {e}"}
         ths = [threading.Thread(target=one, args=(i,)) for i in range(c)]
         [t.start() for t in ths]; [t.join() for t in ths]
+        broken = [o["error"] for o in out if o.get("error")]
+        if broken:
+            return {"error": "; ".join(broken), "requests": c}
         tot = sum(o["tokens"] for o in out)
         span = max(o["last"] for o in out) - min(o["first"] for o in out)
         per = [(o["tokens"] - 1) / (o["last"] - o["first"]) for o in out if o["tokens"] > 1 and o["last"] > o["first"]]
+        if span <= 0 or tot <= 0:
+            return {"error": f"nothing to measure (tokens {tot}, span {span:.3f} s)", "requests": c}
+        if not per:
+            return {"error": "no stream produced more than one token", "requests": c}
         return {"aggregate": round(tot / span, 2), "per_stream_mean": round(statistics.mean(per), 2),
                 "per_stream_min": round(min(per), 2), "tokens": tot,
                 "finish": sorted({o["finish"] for o in out if o["finish"]}), "ttft_max": round(max(o["first"] - o["t0"] for o in out), 2)}
 
+    def tier(name, c, rounds):
+        """A tier that could not be measured ends the run: keep the rest, say what failed."""
+        broken = [r["error"] for r in rounds if r.get("error")]
+        if broken:
+            res["decode"][name] = {"error": "; ".join(broken), "requests": c, "rounds": rounds}
+            save()
+            fail(f"decode {name}: " + "; ".join(broken))
+
     for c in list(a.conc) + list(a.high):
         with Power() as pw:
             rounds = [run_conc(c, r) for r in range(a.dec_reps)]
+        tier(f"C{c}", c, rounds)
         agg = [r["aggregate"] for r in rounds]
         res["decode"][f"C{c}"] = {"aggregate": med(agg), "per_stream_mean": med([r["per_stream_mean"] for r in rounds]),
                                    "rounds": rounds, "gpu_power_w_mean": pw.mean()}
@@ -176,6 +229,7 @@ def main():
     pre = rand_ids(32768, seed + 99) if ctx_len > 40000 else None
     if pre:
         r = [run_conc(1, 90 + i, prefix=pre) for i in range(a.dec_reps)]
+        tier("C1@32k", 1, r)
         res["decode"]["C1@32k"] = {"aggregate": med([x["aggregate"] for x in r]), "rounds": r}
         print(f"decode C1@32k: {statistics.median([x['aggregate'] for x in r]):.2f} tok/s", flush=True)
     res["prompt_sha256"] = PROMPT_HASHES; res["nonce_prefix"] = NONCE
@@ -189,4 +243,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SweepFailed as e:
+        mark_failed(str(e))
+        print("SWEEP FAILED: " + str(e), file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        why = f"{type(e).__name__}: {e}"
+        mark_failed(why)
+        print("SWEEP FAILED: " + why, file=sys.stderr)
+        sys.exit(1)
