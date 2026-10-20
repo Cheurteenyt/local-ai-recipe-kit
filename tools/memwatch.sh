@@ -9,7 +9,7 @@
 # summed) and one gpuN_used_MiB column per GPU.
 OUT=${1:-memwatch.csv}
 URL=${2:-}
-GPUCOLS=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | awk '{printf ",gpu%s_used_mib", $1}')
+GPUCOLS=$(timeout 5 nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | awk '{printf ",gpu%s_used_mib", $1}')
 echo "t,phase,mem_available_gb,swap_used_gb,gpu_used_mib$GPUCOLS" > "$OUT"
 phase=load
 while true; do
