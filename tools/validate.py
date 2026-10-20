@@ -3,16 +3,26 @@
   python3 tools/validate.py submissions/**/*.json"""
 import glob, json, os, re, sys
 
-TARGETS = {os.path.splitext(f)[0] for f in os.listdir(os.path.join(os.path.dirname(__file__), "..", "targets"))}
+HERE = os.path.dirname(os.path.abspath(__file__))
+TARGETS = {os.path.splitext(f)[0] for f in os.listdir(os.path.join(HERE, "..", "targets"))}
 DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+# The effective date of the submission rules below: a submission with an older "submitted"
+# date is grandfathered - validate.py warns about it instead of failing it.
+RULE_FROM = "2026-10-20"
+
+
+def before_rule(sub):
+    """True for submissions that predate the rule: they are warned about, not failed."""
+    d = str(sub.get("submitted") or "")
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)) and d < RULE_FROM
 
 
 def check(path):
-    errs = []
+    errs, warns = [], []
     try:
         s = json.load(open(path))
     except Exception as e:
-        return [f"not JSON: {e}"]
+        return [f"not JSON: {e}"], []
     if os.path.getsize(path) > 1_000_000:
         errs.append("file over 1 MB")
     if s.get("schema") != "local-ai-recipe-kit/submission/v1":
@@ -20,6 +30,22 @@ def check(path):
     for k in ("handle", "target", "launch", "probe", "quality", "speed"):
         if not s.get(k):
             errs.append(f"missing {k}")
+    nm = s.get("needs_measured")
+    if not isinstance(nm, dict) or not nm:
+        problems = ["it is null or empty (run tools/memwatch.sh, pass --memwatch work/memwatch.csv)"]
+    else:
+        problems = []
+        ram, gpu = nm.get("host_ram_drop_peak_gb"), nm.get("gpu_used_peak_mib")
+        if not isinstance(ram, (int, float)) or ram <= 0:
+            problems.append(f"host_ram_drop_peak_gb={ram!r} (the measured MemAvailable drop, must be > 0)")
+        if not isinstance(gpu, (int, float)) or gpu <= 0:
+            problems.append(f"gpu_used_peak_mib={gpu!r} (the measured GPU memory, must be > 0)")
+    if problems:
+        if before_rule(s):
+            warns.append("needs_measured not enforced for a submission from before the rule (submitted "
+                         f"{s.get('submitted')} < {RULE_FROM}): " + "; ".join(problems))
+        else:
+            errs.append("needs_measured: " + "; ".join(problems))
     if s.get("target") and s["target"] not in TARGETS:
         errs.append(f"unknown target {s['target']} (have {sorted(TARGETS)})")
     L = s.get("launch") or {}
@@ -46,16 +72,21 @@ def check(path):
     card = os.path.basename(os.path.dirname(path))
     if card == "submissions":
         errs.append("put the file under submissions/<card id>/")
-    return errs
+    return errs, warns
 
 
 def main():
     files = [f for a in (sys.argv[1:] or ["submissions/**/*.json"]) for f in glob.glob(a, recursive=True)]
     bad = 0
     for f in files:
-        e = check(f)
-        print(("FAIL " if e else "ok   ") + f + ("".join("\n  - " + x for x in e)))
-        bad += bool(e)
+        errs, warns = check(f)
+        line = ("FAIL " if errs else "ok   ") + f
+        if errs:
+            line += "".join("\n  - " + x for x in errs)
+        if warns:
+            line += ("\n  ! " + x for x in warns) if errs else (" (" + "; ".join(warns) + ")")
+        print(line)
+        bad += bool(errs)
     sys.exit(1 if bad else 0)
 
 

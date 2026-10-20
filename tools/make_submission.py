@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Assemble one submission file from the measured artifacts (see PROMPT.md step 9). Copies numbers, never invents them."""
-import argparse, csv, datetime, json, os
+import argparse, csv, datetime, json, os, sys
 
 
 def memwatch_summary(path):
-    rows = list(csv.DictReader(open(path)))
+    try:
+        rows = list(csv.DictReader(open(path)))
+    except OSError as e:
+        sys.exit(f"cannot read --memwatch {path}: {e}")
     if not rows:
-        return None
+        sys.exit(f"--memwatch {path} has no rows: the submission must carry the measured memory needs")
     avail = [float(r["mem_available_gb"]) for r in rows if r["mem_available_gb"]]
     swap = [float(r["swap_used_gb"]) for r in rows if r["swap_used_gb"]]
     gpu = [float(r["gpu_used_mib"]) for r in rows if r.get("gpu_used_mib")]
@@ -19,7 +22,9 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("probe", "sweep", "panel", "launch"):
         ap.add_argument(f"--{k}", required=True)
-    ap.add_argument("--needle"); ap.add_argument("--memwatch"); ap.add_argument("--notes", default="")
+    ap.add_argument("--needle")
+    ap.add_argument("--memwatch", required=True, help="memwatch.sh CSV (required: the submission carries the measured needs)")
+    ap.add_argument("--notes", default="")
     ap.add_argument("--target", required=True); ap.add_argument("--handle", required=True); ap.add_argument("--out", required=True)
     a = ap.parse_args()
     L = lambda p: json.load(open(p)) if p else None
@@ -36,7 +41,7 @@ def main():
                                 for k, v in (sweep.get("decode") or {}).items()},
                      "prompt_sha256": sweep.get("prompt_sha256"),
                      "server_args": sweep.get("server_args"), "gates": sweep.get("gates")},
-           "needs_measured": memwatch_summary(a.memwatch) if a.memwatch else None, "notes": a.notes}
+           "needs_measured": memwatch_summary(a.memwatch), "notes": a.notes}
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     json.dump(sub, open(a.out, "w"), indent=1)
     print("wrote", a.out)
